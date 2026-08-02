@@ -17,10 +17,11 @@
   <div class="w-full flex flex-col lg:flex-row items-center lg:items-start justify-center gap-10">
   <!-- Device -->
   <div class="shell-wrap flex-none" :style="shellVars">
-    <div class="contrast-dial" title="Contrast — drag or scroll"
-         @pointerdown.prevent="dialStart" @wheel.prevent="dialScroll">
+    <div class="contrast-dial">
       <div class="wheel" :style="{backgroundPosition:'0 ' + (dial*1.5) + 'px'}"></div>
     </div>
+    <div class="dial-grip" title="Contrast — drag or scroll"
+         @pointerdown.prevent="dialStart" @wheel.prevent="dialScroll"></div>
   <div class="shell">
     <div class="power-rail">
       <div class="power-switch" :class="{on:powerOn}" @click="togglePower"><div class="knob"></div></div>
