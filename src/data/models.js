@@ -1,0 +1,67 @@
+export const MODELS = [
+  { id:'dmg',   tag:'DMG',    sub:'1989', full:'Game Boy',             res:[160,144], scale:4, mono:true,
+    palette:[[15,56,15],[48,98,48],[139,172,15],[155,188,15]], led:'#e0242a', gridInk:[6,20,6],
+    traits:[
+      'Sharp STN dot-matrix LCD — 160×144 pixels, four shades of green, and no light of any kind.',
+      'Notorious motion blur: the pixels change state so slowly that moving objects smear across the screen (ghosting).',
+      'Best experienced under a desk lamp, angled just right — exactly like 1989.',
+    ],
+    sim:'The photo is reduced to luminance, pushed through a 4×4 Bayer ordered-dither matrix, then snapped to the four canonical DMG greens — the same trick the Game Boy Camera used for its photos.' },
+  { id:'pocket',tag:'POCKET', sub:'1996', full:'Game Boy Pocket',      res:[160,144], scale:4, mono:true,
+    palette:[[38,38,38],[96,96,96],[170,170,170],[235,235,235]], led:'#37d67a', gridInk:[20,20,20],
+    traits:[
+      'Revised STN panel — same 160×144 resolution, but true black-and-grey instead of pea-soup green.',
+      'Much faster pixel response than the DMG, so far less ghosting in motion.',
+      'Still no backlight; the smaller shell runs on two AAA batteries.',
+    ],
+    sim:'Identical dither pipeline to the DMG — luminance, Bayer matrix, four levels — but the palette maps to neutral greys instead of greens.' },
+  { id:'light', tag:'LIGHT',  sub:'1998', full:'Game Boy Light',       res:[160,144], scale:4, mono:true,
+    palette:[[12,34,26],[42,86,66],[116,166,142],[196,228,206]], led:'#37d67a', gridInk:[10,30,22], glow:'rgba(120,220,190,.10)',
+    traits:[
+      'A Pocket screen married to an electroluminescent (EL) backlight — sold only in Japan, powered by AA batteries.',
+      'The EL sheet glows a pale blue-green, washing the four greys into a soft cyan tint.',
+      'The glow is uneven and blooms slightly around bright pixels, like a tiny cinema screen.',
+    ],
+    sim:'The four grey levels are re-mapped onto an EL-inspired cyan palette, then a faint bloom layer is laid over the whole frame to fake the backlight bleeding between pixels.' },
+  { id:'gbc',   tag:'COLOR',  sub:'1998', full:'Game Boy Color',       res:[160,144], scale:4, mono:false,
+    grade:{ b:-8, c:0.94, s:0.82, wash:null }, led:'#e0242a', gridInk:[10,10,10],
+    traits:[
+      'Reflective TFT colour LCD — up to 56 colours on screen at once, drawn from a 15-bit master palette of 32,768.',
+      'No backlight: it relies on ambient light bouncing off a reflective layer behind the panel.',
+      'Indoors the colours look dark and muted; in sunlight they suddenly sing.',
+    ],
+    sim:'Every channel is crushed from 8-bit to 5-bit (32 steps) to match the hardware colour depth, then slightly darkened and desaturated to mimic the unlit reflective panel.' },
+  { id:'gba',   tag:'GBA',    sub:'2001', full:'Game Boy Advance',     res:[160,144], scale:4, mono:false,
+    grade:{ b:-24, c:0.90, s:0.90, wash:null }, led:'#37d67a', gridInk:[10,10,10],
+    traits:[
+      'Reflective TFT again — native 240×160 (shown here at 160×144 for comparison), 15-bit colour, and still no light.',
+      'Infamously dim: the front polariser makes indoor play a genuine struggle.',
+      'Kids of 2001 learned to chase lamp light around the room.',
+    ],
+    sim:'The same 15-bit crush as the Color, but with a heavy brightness cut and lowered contrast to reproduce that "playing inside a cave" experience.' },
+  { id:'sp001', tag:'SP·001', sub:'2003', full:'GBA SP (frontlit)',    res:[160,144], scale:4, mono:false,
+    grade:{ b:8, c:0.72, s:0.82, wash:[178,198,216,0.22] }, led:'#37d67a', gridInk:[30,36,44],
+    traits:[
+      'AGS-001: a frontlight panel sits in front of the LCD and shines sideways across it.',
+      'Even illumination at last — but the light washes over the surface, so blacks turn milky blue-grey.',
+      'One brightness setting: on or off.',
+    ],
+    sim:'After the 15-bit crush, contrast is flattened hard and a pale blue wash is blended over every pixel, emulating light scattering off the front of the panel.' },
+  { id:'sp101', tag:'SP·101', sub:'2005', full:'GBA SP (backlit)',     res:[160,144], scale:4, mono:false,
+    grade:{ b:14, c:1.07, s:1.12, wash:null }, led:'#37d67a', gridInk:[10,10,10],
+    traits:[
+      'AGS-101: a true backlight behind the LCD — bright, saturated, with two brightness levels.',
+      'Colours finally look the way developers intended.',
+      'The definitive GBA screen; original 101 units are prized by collectors today.',
+    ],
+    sim:'The 15-bit crush goes the other way: brightness is lifted, and contrast plus saturation are pushed past neutral for that vivid backlit pop.' },
+];
+
+export const SHELLS = [
+  { id:'gray',   name:'Original', dot:'#d2cec0', hi:'#ddd9cb', mid:'#d2cec0', lo:'#c7c3b4', ink:'#4c4c56', ink2:'#77746a', ab:'#7c1f4e', abHi:'#9c2f66', wh1:'#c9c5b6', wh2:'#a49f90' },
+  { id:'red',    name:'Red',      dot:'#bc3527', hi:'#d24a3c', mid:'#bc3527', lo:'#a02b1f', ink:'#f2d8d3', ink2:'#e0aca2', ab:'#34343a', abHi:'#4c4c54', wh1:'#b03225', wh2:'#8a261b' },
+  { id:'yellow', name:'Yellow',   dot:'#e2c22e', hi:'#f0d658', mid:'#e2c22e', lo:'#c9a91f', ink:'#5c4d10', ink2:'#8a7a30', ab:'#34343a', abHi:'#4c4c54', wh1:'#d6b62a', wh2:'#ab8f1d' },
+  { id:'green',  name:'Green',    dot:'#2c9c52', hi:'#43b468', mid:'#2c9c52', lo:'#228244', ink:'#dff2e2', ink2:'#a9d8b4', ab:'#34343a', abHi:'#4c4c54', wh1:'#299450', wh2:'#1d753c' },
+  { id:'blue',   name:'Blue',     dot:'#2b59c0', hi:'#4772d6', mid:'#2b59c0', lo:'#1f469e', ink:'#dde6f7', ink2:'#a9bce6', ab:'#34343a', abHi:'#4c4c54', wh1:'#2a56b5', wh2:'#1c3d85' },
+  { id:'black',  name:'Black',    dot:'#333339', hi:'#45454c', mid:'#333339', lo:'#232328', ink:'#d8d8de', ink2:'#9a9aa2', ab:'#7c1f4e', abHi:'#9c2f66', wh1:'#34343a', wh2:'#1f1f24' },
+];
