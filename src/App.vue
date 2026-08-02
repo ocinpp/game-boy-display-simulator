@@ -118,8 +118,9 @@
         <button class="upload-btn flex-1 sm:flex-none" @click="$refs.file.click()">Insert cartridge</button>
         <button class="upload-btn save-btn flex-1 sm:flex-none" @click="download">Save screenshot</button>
       </div>
-      <div class="flex justify-center w-full">
-        <button class="upload-btn all-btn" title="One PNG with every screen type" @click="saveAll">Save all × 7</button>
+      <div class="flex flex-wrap justify-center gap-3 w-full">
+        <button class="upload-btn all-btn flex-1 sm:flex-none" title="One PNG with every screen type, side by side" @click="saveAll('row')">Save all × 7 →</button>
+        <button class="upload-btn all-btn flex-1 sm:flex-none" title="One PNG with every screen type, stacked" @click="saveAll('col')">Save all × 7 ↓</button>
       </div>
       <div class="opt-row">
         <div class="toggle opt" :class="{on:dither}" @click="dither=!dither" v-show="current.mono">
@@ -379,37 +380,39 @@ export default {
       }, 'image/png');
     },
     /* --- filmstrip: all seven screens in one PNG --- */
-    saveAll(){
+    saveAll(direction = 'row'){
       if (!this.source) return;
       const pad = 24, labelH = 52;
+      const vert = direction === 'col';
       const cells = this.models.map(m => {
         const cell = document.createElement('canvas');
         this.paintScreen(cell, m);
         return { m, cell };
       });
       const cw = cells[0].cell.width, ch = cells[0].cell.height;
-      const W = cells.length * cw + (cells.length + 1) * pad;
-      const H = ch + labelH + pad * 2;
+      const W = vert ? cw + pad * 2 : cells.length * cw + (cells.length + 1) * pad;
+      const H = vert ? cells.length * (ch + labelH) + (cells.length + 1) * pad : ch + labelH + pad * 2;
       const strip = document.createElement('canvas');
       strip.width = W; strip.height = H;
       const ctx = strip.getContext('2d');
       ctx.fillStyle = '#e9e7e1'; ctx.fillRect(0, 0, W, H);
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       cells.forEach(({ m, cell }, i) => {
-        const x = pad + i * (cw + pad);
-        ctx.drawImage(cell, x, pad);
+        const x = vert ? pad : pad + i * (cw + pad);
+        const y = vert ? pad + i * (ch + labelH + pad) : pad;
+        ctx.drawImage(cell, x, y);
         ctx.fillStyle = '#3a3a40';
         ctx.font = '14px "Press Start 2P", ui-monospace, monospace';
-        ctx.fillText(m.tag, x + cw/2, pad + ch + 20);
+        ctx.fillText(m.tag, x + cw/2, y + ch + 20);
         ctx.fillStyle = '#8a877c';
         ctx.font = '10px "Press Start 2P", ui-monospace, monospace';
-        ctx.fillText(m.sub, x + cw/2, pad + ch + 40);
+        ctx.fillText(m.sub, x + cw/2, y + ch + 40);
       });
       strip.toBlob(blob => {
         if (!blob) return;
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'gameboy-all-7-screens.png';
+        a.download = vert ? 'gameboy-all-7-screens-vertical.png' : 'gameboy-all-7-screens.png';
         document.body.appendChild(a);
         a.click();
         a.remove();
