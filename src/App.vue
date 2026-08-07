@@ -11,7 +11,7 @@
       <span class="title-sub">DISPLAY SIMULATOR</span>
       <span class="stripe b"></span>
     </div>
-    <p class="text-xs mt-4 text-neutral-500 tracking-wide">Upload a photo — see it through seven authentic screens.</p>
+    <p class="text-xs mt-4 text-neutral-500 tracking-wide">Upload a photo or short clip — see it through seven authentic screens.</p>
   </header>
 
   <div class="w-full flex flex-col lg:flex-row items-center lg:items-start justify-center gap-10">
@@ -78,7 +78,7 @@
         <div class="pill-groove"><div class="pill"></div></div>
         <span>SELECT</span>
       </div>
-      <div class="ss-unit selectable" title="Jump to settings" @click="pressStart">
+      <div class="ss-unit selectable" :title="isVideo ? (playing ? 'Pause the clip' : 'Play the clip') : 'Jump to settings'" @click="pressStart">
         <div class="pill-groove"><div class="pill"></div></div>
         <span>START</span>
       </div>
@@ -138,12 +138,12 @@
       {{ current.full }} · {{ current.res[0] }}×{{ current.res[1] }} · {{ current.mono ? '4 shades' : '15-bit colour' }}{{ dial ? ' · contrast ' + fmt(dial) : '' }}
     </div>
     <div class="text-[10px] text-neutral-400 tracking-wider">
-      D-pad or arrow keys to move the image · press SELECT for display notes
+      {{ isVideo ? 'START or spacebar: play / pause · D-pad moves the frame · SELECT for notes' : 'D-pad or arrow keys to move the image · press SELECT for display notes' }}
     </div>
   </div>
   </div>
 
-  <input ref="file" type="file" accept="image/*" class="hidden" @change="onFile">
+  <input ref="file" type="file" accept="image/*,video/*" class="hidden" @change="onFile">
 
   <!-- drop overlay -->
   <div v-if="dragging" class="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
@@ -227,6 +227,8 @@ export default {
       dial: 0,
       booting: false,
       source: null,
+      isVideo: false,
+      playing: false,
     };
   },
   computed:{
@@ -249,7 +251,12 @@ export default {
     dial(){ this.render(); },
     powerOn(on){
       if (on) this.startBoot();
-      else { this.booting = false; cancelAnimationFrame(this.raf); this.render(); }
+      else {
+        // powering down mid-clip pauses it; the boot sequence resumes it
+        this.wasPlaying = this.isVideo && this.playing;
+        if (this.isVideo && this.source && this.playing) this.source.pause();
+        this.booting = false; cancelAnimationFrame(this.raf); this.render();
+      }
     },
   },
   mounted(){
@@ -259,14 +266,56 @@ export default {
   },
   beforeUnmount(){
     window.removeEventListener('keydown', this.onKey);
+    this.clearMedia();
   },
   methods:{
     togglePower(){ this.powerOn = !this.powerOn; },
     pressStart(){
-      // mobile only: everything is already visible on desktop
+      // with a clip loaded, START is play / pause; otherwise it jumps to settings on mobile
+      if (this.isVideo){ this.togglePlay(); return; }
       if (window.innerWidth < 1024 && this.$refs.panel){
         this.$refs.panel.scrollIntoView({ behavior:'smooth', block:'start' });
       }
+    },
+    togglePlay(){
+      if (!this.isVideo || !this.source) return;
+      if (this.source.paused) this.source.play().catch(() => {});
+      else this.source.pause();
+    },
+    onVideoPlay(){
+      this.playing = true;
+      this.videoLoopOn = false; // allow a fresh loop even if a stale flag lingered
+      this.startVideoLoop();
+    },
+    onVideoPause(){
+      this.playing = false;
+      this.videoLoopOn = false;
+    },
+    startVideoLoop(){
+      if (this.videoLoopOn) return;
+      this.videoLoopOn = true;
+      const step = () => {
+        if (!this.isVideo || !this.source || this.source.paused || this.source.ended){
+          this.videoLoopOn = false;
+          return;
+        }
+        this.render();
+        if (this.source.requestVideoFrameCallback) this.source.requestVideoFrameCallback(step);
+        else requestAnimationFrame(step);
+      };
+      step();
+    },
+    clearMedia(){
+      if (this.isVideo && this.source){
+        this.source.pause();
+        this.source.removeEventListener('play', this.onVideoPlay);
+        this.source.removeEventListener('pause', this.onVideoPause);
+        this.source.removeAttribute('src');
+        this.source.load();
+      }
+      if (this.mediaUrl){ URL.revokeObjectURL(this.mediaUrl); this.mediaUrl = null; }
+      this.playing = false;
+      this.videoLoopOn = false;
     },
     setModel(i){ this.modelIndex = i; },
     cycleModel(d){
@@ -300,7 +349,13 @@ export default {
         const t = (now - this.t0) / 1000;
         this.drawBoot(t);
         if (t < 2.1) this.raf = requestAnimationFrame(step);
-        else { this.booting = false; this.render(); }
+        else {
+          this.booting = false; this.render();
+          if (this.wasPlaying && this.isVideo && this.source){
+            this.wasPlaying = false;
+            this.source.play().catch(() => {});
+          }
+        }
       };
       this.raf = requestAnimationFrame(step);
     },
@@ -361,6 +416,7 @@ export default {
     },
     onKey(e){
       if (e.key === 'Escape' && this.infoOpen){ this.infoOpen = false; return; }
+      if (e.key === ' ' && this.isVideo){ e.preventDefault(); this.togglePlay(); return; }
       const map = { ArrowUp:[0,-1], ArrowDown:[0,1], ArrowLeft:[-1,0], ArrowRight:[1,0] };
       const d = map[e.key];
       if (d){ e.preventDefault(); this.nudge(d[0], d[1]); }
@@ -428,13 +484,43 @@ export default {
     onDrop(e){
       this.dragging = false;
       const f = e.dataTransfer.files && e.dataTransfer.files[0];
-      if (f && f.type.startsWith('image/')) this.loadFile(f);
+      if (f && (f.type.startsWith('image/') || f.type.startsWith('video/'))) this.loadFile(f);
     },
     loadFile(file){
+      if (file.type.startsWith('video/')){ this.loadVideo(file); return; }
       const url = URL.createObjectURL(file);
       const img = new Image();
-      img.onload = () => { this.source = img; this.resetPan(); this.render(); URL.revokeObjectURL(url); };
+      img.onload = () => {
+        this.clearMedia();
+        this.isVideo = false;
+        this.source = img; this.resetPan(); this.render();
+        URL.revokeObjectURL(url);
+      };
       img.src = url;
+    },
+    loadVideo(file){
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.muted = true;      // silent for now — sound design arrives with the export phase
+      v.loop = true;
+      v.playsInline = true;
+      v.preload = 'auto';
+      v.addEventListener('play', this.onVideoPlay);
+      v.addEventListener('pause', this.onVideoPause);
+      v.addEventListener('loadeddata', () => {
+        this.clearMedia();          // release the previous source first
+        this.isVideo = true;
+        this.source = v;
+        this.mediaUrl = url;        // keep the blob URL alive while the clip plays
+        this.resetPan();
+        this.render();              // first frame immediately, then motion
+        v.play().catch(() => {});   // muted autoplay is allowed everywhere
+      });
+      v.addEventListener('error', () => {
+        URL.revokeObjectURL(url);
+        alert("This clip's format isn't supported by your browser — try an MP4 (H.264).");
+      });
+      v.src = url;
     },
 
     /* --- default "pack-in" artwork so the unit isn't blank --- */
@@ -493,7 +579,9 @@ export default {
       const buf = document.createElement('canvas');
       buf.width = W; buf.height = H;
       const bx = buf.getContext('2d');
-      const sw = this.source.width, sh = this.source.height;
+      const sw = this.isVideo ? this.source.videoWidth : this.source.width;
+      const sh = this.isVideo ? this.source.videoHeight : this.source.height;
+      if (!sw || !sh) return;
       const scale = Math.max(W/sw, H/sh);
       const dw = sw*scale, dh = sh*scale;
       const baseX = (W-dw)/2, baseY = (H-dh)/2;
