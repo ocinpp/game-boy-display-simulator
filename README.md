@@ -1,9 +1,9 @@
 # Game Boy Display Simulator
 
-Upload a photo and see it through seven authentic Game Boy screens — from the
-pea-soup green of the original 1989 DMG to the backlit brilliance of the
-AGS-101 — rendered inside a faithful, fully interactive CSS recreation of the
-original hardware.
+Upload a photo or a short video clip and see it through seven authentic Game
+Boy screens — from the pea-soup green of the original 1989 DMG to the backlit
+brilliance of the AGS-101 — rendered inside a faithful, fully interactive CSS
+recreation of the original hardware.
 
 Built with **Vue 3**, **Vite**, and **Tailwind CSS 4**.
 
@@ -32,8 +32,8 @@ All screens render at a unified 160×144 for easy comparison.
 - **A / B buttons** — cycle through the seven screen types
 - **SELECT** — opens the display-notes panel: hardware traits of the real
   panel plus exactly how the app reproduces it (ESC or × dismisses)
-- **START** — on mobile, scrolls to the configuration panel; decorative on
-  desktop
+- **START** — plays / pauses a loaded video clip (spacebar works too); with a
+  photo loaded, scrolls to the configuration panel on mobile
 - **Contrast wheel** — a half-buried thumbwheel on the left edge; drag it or
   hover and scroll to bias brightness/contrast, just like the LCD voltage dial
 - **Battery LED** — red or green depending on the model, dark when powered off
@@ -43,12 +43,16 @@ All screens render at a unified 160×144 for easy comparison.
 Six shells: Original gray, Red, Yellow, Green, Blue, and Black — each with
 matching label ink and button colours.
 
-### Photo handling
+### Photo & video handling
 
 - Load via the **Insert cartridge** button or drag-and-drop anywhere
-- **Save screenshot** — download the current screen as a 4× PNG
-- **Save all × 7** — one click downloads a labeled filmstrip PNG of all
-  seven screens side by side
+- Short video clips play live through the same pixel pipeline — every screen
+  type, the d-pad, and the contrast wheel all work on moving footage; clips
+  loop muted (sound design is planned for a later phase)
+- **Save screenshot** — download the current screen as a 4× PNG (grabs the
+  current frame when a clip is loaded)
+- **Save all × 7** — download all seven screens as one labeled PNG, laid out
+  horizontally (→) or stacked vertically (↓)
 - Toggles for Bayer ordered dithering (mono models) and the LCD pixel-gap grid
 
 ## Getting started
@@ -108,7 +112,7 @@ and the filmstrip export.
 | A / B buttons | Next / previous screen type |
 | SELECT | Toggle display-notes panel |
 | ESC | Dismiss notes panel |
-| START | Scroll to config (mobile only) |
+| START / spacebar | Play/pause clip; scroll to config (mobile, photo mode) |
 | Contrast wheel | Drag or hover-scroll to adjust |
 | Power switch | Boot animation + chime / power off |
 
