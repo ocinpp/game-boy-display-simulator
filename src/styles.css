@@ -331,6 +331,7 @@
     font-size:11px;
   }
   .all-btn:active{ box-shadow:0 0 0 #3f1d63; }
+  .upload-btn:disabled{ opacity:.65; cursor:default; transform:none; }
   .toggle{
     display:flex; align-items:center; gap:8px; cursor:pointer;
   }
@@ -465,6 +466,31 @@
     background:#e4e1d8; border-radius:4px; padding:1px 5px;
     font-family:ui-monospace, Menlo, monospace; font-size:11px;
   }
+  /* ---------- Mobile scroll hint ---------- */
+  .scroll-hint{
+    position:fixed; left:50%; bottom:20px; z-index:40;
+    transform:translateX(-50%);
+    display:flex; align-items:center; gap:7px;
+    background:#3a3a40; color:#e9e7e1;
+    font-family:'Press Start 2P', ui-monospace, monospace;
+    font-size:8px; letter-spacing:.14em;
+    padding:11px 16px; border-radius:999px; border:none; cursor:pointer;
+    box-shadow:0 3px 0 #232327, 0 6px 14px rgba(0,0,0,.25);
+  }
+  .scroll-hint:active{ box-shadow:0 0 0 #232327; }
+  /* bounce lives on the inner span: an infinite animation on the transitioning
+     element itself would block Vue's leave transition from ever completing */
+  .scroll-hint-bounce{
+    display:inline-block;
+    animation:hint-bounce 1.6s ease-in-out infinite;
+  }
+  @keyframes hint-bounce{
+    0%,100%{ transform:translateY(0); }
+    50%{ transform:translateY(4px); }
+  }
+  .hint-fade-enter-active, .hint-fade-leave-active{ transition:opacity .25s ease; }
+  .hint-fade-enter-from, .hint-fade-leave-to{ opacity:0; }
+
   /* ---------- Options row / mobile toggles ---------- */
   .opt-row{ display:flex; flex-direction:column; gap:8px; width:100%; }
   @media (min-width:640px){

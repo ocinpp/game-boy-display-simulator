@@ -32,8 +32,11 @@ All screens render at a unified 160×144 for easy comparison.
 - **A / B buttons** — cycle through the seven screen types
 - **SELECT** — opens the display-notes panel: hardware traits of the real
   panel plus exactly how the app reproduces it (ESC or × dismisses)
-- **START** — plays / pauses a loaded video clip (spacebar works too); with a
-  photo loaded, scrolls to the configuration panel on mobile
+- **START** — plays / pauses a loaded video clip (spacebar works too);
+  decorative with a photo loaded, like real hardware
+- **Scroll hint** — on mobile, a floating ▼ CONFIG chip bounces at the bottom
+  of the screen until the configuration panel scrolls into view; tapping it
+  scrolls straight there
 - **Contrast wheel** — a half-buried thumbwheel on the left edge; drag it or
   hover and scroll to bias brightness/contrast, just like the LCD voltage dial
 - **Battery LED** — red or green depending on the model, dark when powered off
@@ -49,6 +52,11 @@ matching label ink and button colours.
 - Short video clips play live through the same pixel pipeline — every screen
   type, the d-pad, and the contrast wheel all work on moving footage; clips
   loop muted (sound design is planned for a later phase)
+- **Save clip (GIF)** — exports the current screen as an animated GIF: the
+  first 10 seconds at 15fps, 320×288, with a shared 256-colour palette sampled
+  across the clip so colours never flicker. Frames render offline (seek →
+  paint → capture) and encode in a Web Worker, with live progress on the
+  button; the preview resumes right where it left off
 - **Save screenshot** — download the current screen as a 4× PNG (grabs the
   current frame when a clip is loaded)
 - **Save all × 7** — download all seven screens as one labeled PNG, laid out
@@ -112,7 +120,7 @@ and the filmstrip export.
 | A / B buttons | Next / previous screen type |
 | SELECT | Toggle display-notes panel |
 | ESC | Dismiss notes panel |
-| START / spacebar | Play/pause clip; scroll to config (mobile, photo mode) |
+| START / spacebar | Play/pause clip (decorative in photo mode) |
 | Contrast wheel | Drag or hover-scroll to adjust |
 | Power switch | Boot animation + chime / power off |
 

@@ -78,12 +78,12 @@
         <div class="pill-groove"><div class="pill"></div></div>
         <span>SELECT</span>
       </div>
-      <div class="ss-unit selectable" :title="isVideo ? (playing ? 'Pause the clip' : 'Play the clip') : 'Jump to settings'" @click="pressStart">
+      <div class="ss-unit" :class="{selectable:isVideo}" :title="isVideo ? (playing ? 'Pause the clip' : 'Play the clip') : ''" @click="pressStart">
         <div class="pill-groove"><div class="pill"></div></div>
         <span>START</span>
       </div>
     </div>
-    <div class="speaker"><div class="grille"></div></div>
+    <div class="speaker" :class="{selectable:isVideo}" :title="isVideo ? 'Toggle chiptune sound' : ''" @click="toggleSound"><div class="grille"></div></div>
   </div>
   </div>
 
@@ -123,6 +123,16 @@
         <button class="upload-btn all-btn flex-1 sm:flex-none" title="One PNG with every screen type, side by side" @click="saveAll('row')">Save all × 7 →</button>
         <button class="upload-btn all-btn flex-1 sm:flex-none" title="One PNG with every screen type, stacked" @click="saveAll('col')">Save all × 7 ↓</button>
       </div>
+      <div v-if="isVideo" class="flex flex-wrap justify-center gap-3 w-full">
+        <button class="upload-btn all-btn flex-1 sm:flex-none" :disabled="gifBusy || webmBusy"
+                title="Animated GIF of the current screen — first 10s at 15fps" @click="exportGif">
+          {{ gifBusy ? 'Rendering ' + gifProgress + '%' : 'Save clip (GIF)' }}
+        </button>
+        <button class="upload-btn all-btn flex-1 sm:flex-none" :disabled="webmBusy || gifBusy"
+                title="WebM video with chiptune sound — records in real time, first 10s" @click="exportWebm">
+          {{ webmBusy ? 'Recording ' + webmProgress + '%' : 'Save clip (WebM)' }}
+        </button>
+      </div>
       <div class="opt-row">
         <div class="toggle opt" :class="{on:dither}" @click="dither=!dither" v-show="current.mono">
           <span class="hw-label text-neutral-500">Dither</span>
@@ -130,6 +140,10 @@
         </div>
         <div class="toggle opt" :class="{on:grid}" @click="grid=!grid">
           <span class="hw-label text-neutral-500">Pixel grid</span>
+          <div class="slot"></div>
+        </div>
+        <div class="toggle opt" :class="{on:soundOn}" @click="toggleSound" v-show="isVideo">
+          <span class="hw-label text-neutral-500">Sound</span>
           <div class="slot"></div>
         </div>
       </div>
@@ -150,6 +164,13 @@
        style="background:rgba(233,231,225,.9)">
     <div class="hw-label text-neutral-600" style="font-size:14px">Release to load</div>
   </div>
+
+  <!-- mobile scroll hint: more machine below -->
+  <transition name="hint-fade">
+    <button v-if="showScrollHint && !infoOpen" class="scroll-hint lg:hidden" @click="scrollToPanel">
+      <span class="scroll-hint-bounce">▼ CONFIG</span>
+    </button>
+  </transition>
 
   <!-- display-notes side panel -->
   <transition name="slide">
@@ -208,7 +229,10 @@
 <script>
 import { nextTick } from 'vue';
 import { MODELS, SHELLS } from './data/models.js';
+import { SOUND } from './config/sound.js';
 import { BAYER, clamp } from './utils.js';
+import GifWorker from './workers/gifWorker.js?worker';
+import crushUrl from './workers/crushWorklet.js?url';
 
 export default {
   data(){
@@ -229,6 +253,12 @@ export default {
       source: null,
       isVideo: false,
       playing: false,
+      showScrollHint: false,
+      gifBusy: false,
+      gifProgress: 0,
+      soundOn: false,
+      webmBusy: false,
+      webmProgress: 0,
     };
   },
   computed:{
@@ -263,19 +293,28 @@ export default {
     this.source = this.makeSample();
     nextTick(() => this.startBoot());
     window.addEventListener('keydown', this.onKey);
+    // mobile: nudge users toward the config panel until it scrolls into view
+    if (window.matchMedia('(max-width:1023px)').matches){
+      this.scrollObs = new IntersectionObserver(entries => {
+        this.showScrollHint = !entries[0].isIntersecting;
+      }, { threshold: 0.05 });
+      nextTick(() => { if (this.$refs.panel) this.scrollObs.observe(this.$refs.panel); });
+    }
   },
   beforeUnmount(){
     window.removeEventListener('keydown', this.onKey);
+    if (this.scrollObs) this.scrollObs.disconnect();
     this.clearMedia();
+    if (this.audioCtx) this.audioCtx.close().catch(() => {});
   },
   methods:{
     togglePower(){ this.powerOn = !this.powerOn; },
     pressStart(){
-      // with a clip loaded, START is play / pause; otherwise it jumps to settings on mobile
-      if (this.isVideo){ this.togglePlay(); return; }
-      if (window.innerWidth < 1024 && this.$refs.panel){
-        this.$refs.panel.scrollIntoView({ behavior:'smooth', block:'start' });
-      }
+      // START belongs to the clip now — with a photo loaded it's decorative, like real hardware
+      if (this.isVideo) this.togglePlay();
+    },
+    scrollToPanel(){
+      if (this.$refs.panel) this.$refs.panel.scrollIntoView({ behavior:'smooth', block:'start' });
     },
     togglePlay(){
       if (!this.isVideo || !this.source) return;
@@ -476,6 +515,252 @@ export default {
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       }, 'image/png');
     },
+    /* --- chiptune audio: clip soundtrack through a DMG-style output stage ---
+       the trick is to model the Game Boy's SPEAKER, not to mangle the samples:
+       anti-alias lowpass -> gentle crush (6-bit grain, no noise blanket)
+       -> asymmetric soft drive (pulse-wave-ish harmonics) -> compression
+       -> tiny-speaker bandpass (no bass, nasal 1.4kHz buzz, 3.8kHz top end)
+       -> gain -> speakers (user-controlled), plus an always-live recording tap */
+    async ensureAudio(){
+      if (!this.isVideo || !this.source) return false;
+      try {
+        if (!this.audioCtx){
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return false;
+          this.audioCtx = new AC();
+          await this.audioCtx.audioWorklet.addModule(crushUrl);
+          // every tunable value lives in src/config/sound.js
+          this.crush = new AudioWorkletNode(this.audioCtx, 'gb-crush');
+          this.crush.parameters.get('bits').value = SOUND.bits;
+          this.crush.parameters.get('hold').value = SOUND.hold;
+
+          // anti-alias: bandlimit before the sample-and-hold so highs don't
+          // fold back down as metallic noise
+          this.preLPF = this.audioCtx.createBiquadFilter();
+          this.preLPF.type = 'lowpass';
+          this.preLPF.frequency.value = SOUND.preLpf;
+          this.preLPF.Q.value = 0.7;
+
+          // asymmetric soft drive: even+odd harmonics, like a pulse channel
+          this.shaper = this.audioCtx.createWaveShaper();
+          const curve = new Float32Array(512);
+          let peak = 0;
+          for (let i = 0; i < 512; i++){
+            const x = i/255.5 - 1;
+            curve[i] = Math.tanh(SOUND.drive*(x + SOUND.asym)) - Math.tanh(SOUND.drive*SOUND.asym);
+            peak = Math.max(peak, Math.abs(curve[i]));
+          }
+          for (let i = 0; i < 512; i++) curve[i] = curve[i] / peak * 0.9;
+          this.shaper.curve = curve;
+
+          // chip music is flat and loud
+          this.comp = this.audioCtx.createDynamicsCompressor();
+          this.comp.threshold.value = SOUND.comp.threshold;
+          this.comp.knee.value = SOUND.comp.knee;
+          this.comp.ratio.value = SOUND.comp.ratio;
+          this.comp.attack.value = SOUND.comp.attack;
+          this.comp.release.value = SOUND.comp.release;
+
+          // the 3.3cm speaker: no bass, a nasal buzz band, soft top end
+          this.hpf = this.audioCtx.createBiquadFilter();
+          this.hpf.type = 'highpass';
+          this.hpf.frequency.value = SOUND.hpf;
+          this.buzz = this.audioCtx.createBiquadFilter();
+          this.buzz.type = 'peaking';
+          this.buzz.frequency.value = SOUND.buzz.freq;
+          this.buzz.Q.value = SOUND.buzz.q;
+          this.buzz.gain.value = SOUND.buzz.gain;
+          this.lowpass = this.audioCtx.createBiquadFilter();
+          this.lowpass.type = 'lowpass';
+          this.lowpass.frequency.value = SOUND.lpf;
+
+          this.audioGain = this.audioCtx.createGain();
+          this.audioGain.gain.value = 0;
+          this.audioTap = this.audioCtx.createMediaStreamDestination();
+          this.preLPF.connect(this.crush);
+          this.crush.connect(this.shaper);
+          this.shaper.connect(this.comp);
+          this.comp.connect(this.hpf);
+          this.hpf.connect(this.buzz);
+          this.buzz.connect(this.lowpass);
+          this.lowpass.connect(this.audioGain);
+          this.audioGain.connect(this.audioCtx.destination);
+          this.lowpass.connect(this.audioTap);  // WebM recording taps here
+        }
+        if (this.audioSrcEl !== this.source){
+          if (this.audioSrc) this.audioSrc.disconnect();
+          this.audioSrc = this.audioCtx.createMediaElementSource(this.source);
+          this.audioSrc.connect(this.preLPF);
+          this.audioSrcEl = this.source;
+          // once routed through the graph, element.muted gates the graph input
+          this.source.muted = !this.soundOn;
+        }
+        return true;
+      } catch(err){
+        return false;
+      }
+    },
+    async toggleSound(){
+      if (!this.isVideo) return;
+      const ok = await this.ensureAudio();
+      this.soundOn = !this.soundOn;
+      if (ok){
+        if (this.audioCtx.state === 'suspended') this.audioCtx.resume().catch(() => {});
+        this.audioGain.gain.value = this.soundOn ? 1 : 0;
+        this.source.muted = !this.soundOn;
+      }
+    },
+
+    /* --- GIF export: deterministic offline render, encoded in a worker --- */
+    async exportGif(){
+      if (!this.isVideo || !this.source || this.gifBusy || this.webmBusy || this.booting) return;
+      const src = this.source;
+      const m = this.current;
+      const FPS = 15, MAXDUR = 10, S = 2;   // 320×288 output — crisp but shareable
+      const W = m.res[0]*S, H = m.res[1]*S;
+      const dur = Math.min(src.duration || 0, MAXDUR);
+      if (!dur) return;
+
+      this.gifBusy = true; this.gifProgress = 0;
+      const wasPlaying = this.playing;
+      const t0 = src.currentTime;
+      if (wasPlaying) src.pause();
+
+      const worker = new GifWorker();
+      const cv = document.createElement('canvas');
+      const seekTo = t => new Promise(res => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          src.removeEventListener('seeked', finish);
+          res();
+        };
+        src.addEventListener('seeked', finish);
+        src.currentTime = t;
+        setTimeout(finish, 600); // safety net if 'seeked' never fires
+      });
+      const grab = () => {
+        this.paintScreen(cv, m, src, S);
+        return cv.getContext('2d').getImageData(0, 0, W, H);
+      };
+
+      try {
+        worker.postMessage({ type:'start', width: W, height: H });
+        // shared palette sampled across the clip — no per-frame quantize flicker
+        const s1 = (await seekTo(0), grab().data.buffer);
+        const s2 = (await seekTo(dur/2), grab().data.buffer);
+        const s3 = (await seekTo(Math.max(0, dur - 1/FPS)), grab().data.buffer);
+        worker.postMessage({ type:'palette', frames: [s1, s2, s3] }, [s1, s2, s3]);
+
+        const frames = Math.max(1, Math.round(dur * FPS));
+        for (let i = 0; i < frames; i++){
+          await seekTo(Math.min(i / FPS, dur - 0.001));
+          const g = grab();
+          worker.postMessage(
+            { type:'frame', data: g.data.buffer, delay: Math.round(1000/FPS), first: i === 0 },
+            [g.data.buffer]
+          );
+          this.gifProgress = Math.round(((i + 1) / frames) * 95);
+        }
+
+        const buffer = await new Promise(res => {
+          worker.onmessage = e => { if (e.data.type === 'done') res(e.data.buffer); };
+          worker.postMessage({ type:'end' });
+        });
+        this.gifProgress = 100;
+
+        const blob = new Blob([buffer], { type:'image/gif' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'gameboy-' + m.id + '-clip.gif';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      } finally {
+        worker.terminate();
+        this.gifBusy = false;
+        src.currentTime = t0;          // put the playhead back where the user left it
+        if (wasPlaying) src.play().catch(() => {});
+        else this.render();
+      }
+    },
+    /* --- WebM export: real-time recording of the live screen + chiptune audio --- */
+    async exportWebm(){
+      if (!this.isVideo || !this.source || this.webmBusy || this.gifBusy || this.booting) return;
+      const src = this.source;
+      const cv = this.$refs.screen;
+      const dur = Math.min(src.duration || 0, 10);
+      if (!dur || !cv || !cv.captureStream || !window.MediaRecorder) return;
+      const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+        .find(c => MediaRecorder.isTypeSupported(c));
+      if (!mime) return;
+
+      this.webmBusy = true; this.webmProgress = 0;
+      const wasPlaying = this.playing;
+      const t0 = src.currentTime;
+      const wasMuted = src.muted;
+      if (wasPlaying) src.pause();
+
+      let rec = null, timer = null;
+      try {
+        const audioOk = await this.ensureAudio();
+        const stream = cv.captureStream(30);
+        const tracks = [...stream.getVideoTracks()];
+        if (audioOk && this.audioTap){
+          if (this.audioCtx.state === 'suspended') await this.audioCtx.resume().catch(() => {});
+          src.muted = false;  // feed the graph — speaker gain may still be 0
+          tracks.push(...this.audioTap.stream.getAudioTracks());
+        }
+        rec = new MediaRecorder(new MediaStream(tracks), {
+          mimeType: mime,
+          videoBitsPerSecond: 2500000,
+          audioBitsPerSecond: 96000,
+        });
+        const chunks = [];
+        rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+        const stopped = new Promise(res => { rec.onstop = res; });
+
+        // record from the top of the clip, in real time — what you watch is what you get
+        await new Promise(r => {
+          let done = false;
+          const finish = () => { if (!done){ done = true; src.removeEventListener('seeked', finish); r(); } };
+          src.addEventListener('seeked', finish);
+          src.currentTime = 0;
+          setTimeout(finish, 600);
+        });
+        rec.start(250);
+        await src.play().catch(() => {});
+        timer = setInterval(() => {
+          this.webmProgress = Math.min(99, Math.round(src.currentTime / dur * 100));
+          if (src.currentTime >= dur - 0.08){
+            clearInterval(timer); timer = null;
+            src.pause();
+            rec.stop();
+          }
+        }, 100);
+        await stopped;
+        this.webmProgress = 100;
+
+        const blob = new Blob(chunks, { type:'video/webm' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'gameboy-' + this.current.id + '-clip.webm';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      } finally {
+        if (timer) clearInterval(timer);
+        if (rec && rec.state !== 'inactive'){ try{ rec.stop(); }catch(e){} }
+        this.webmBusy = false;
+        src.muted = wasMuted;
+        src.currentTime = t0;
+        if (wasPlaying) src.play().catch(() => {});
+        else this.render();
+      }
+    },
     onFile(e){
       const f = e.target.files[0];
       if (f) this.loadFile(f);
@@ -514,6 +799,7 @@ export default {
         this.mediaUrl = url;        // keep the blob URL alive while the clip plays
         this.resetPan();
         this.render();              // first frame immediately, then motion
+        if (this.audioCtx) this.ensureAudio();  // re-hook the new clip element
         v.play().catch(() => {});   // muted autoplay is allowed everywhere
       });
       v.addEventListener('error', () => {
@@ -572,15 +858,17 @@ export default {
       }
       this.paintScreen(cv, this.current);
     },
-    paintScreen(cv, m){
-      const W = m.res[0], H = m.res[1], S = m.scale;
+    paintScreen(cv, m, src, S){
+      src = src || this.source;
+      S = S || m.scale;
+      const W = m.res[0], H = m.res[1];
 
       // 1. cover-fit source into a tiny native-res buffer
       const buf = document.createElement('canvas');
       buf.width = W; buf.height = H;
       const bx = buf.getContext('2d');
-      const sw = this.isVideo ? this.source.videoWidth : this.source.width;
-      const sh = this.isVideo ? this.source.videoHeight : this.source.height;
+      const sw = this.isVideo ? src.videoWidth : src.width;
+      const sh = this.isVideo ? src.videoHeight : src.height;
       if (!sw || !sh) return;
       const scale = Math.max(W/sw, H/sh);
       const dw = sw*scale, dh = sh*scale;
@@ -592,7 +880,7 @@ export default {
       this.panX = offX - baseX; this.panY = offY - baseY;
       bx.imageSmoothingEnabled = true;
       bx.imageSmoothingQuality = 'high';
-      bx.drawImage(this.source, offX, offY, dw, dh);
+      bx.drawImage(src, offX, offY, dw, dh);
       const img = bx.getImageData(0,0,W,H);
       const d = img.data;
 
