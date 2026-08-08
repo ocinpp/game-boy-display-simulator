@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "gifenc": "^1.0.3",
-    "vue": "^3.5.40"
+    "vue": "^3.5.41"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
